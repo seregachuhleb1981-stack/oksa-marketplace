@@ -1,0 +1,3 @@
+"use client";
+import Link from "next/link";
+export default function FavoritesPage(){return <main className="catalog-shell"><header className="catalog-header"><Link className="brand" href="/"><span className="brand-mark">O</span><span>OKSA</span></Link><Link className="catalog-back" href="/catalog">← До каталогу</Link></header><section className="catalog-intro"><span className="eyebrow">Обране</span><h1>Збережені товари.</h1></section><div className="empty-state"><h2>Обраних товарів поки немає</h2><p>Зберігай цікаві товари, щоб повернутися до них пізніше.</p><Link className="primary-button" href="/catalog">Переглянути каталог <span>→</span></Link></div></main>}
