@@ -11,7 +11,7 @@ export default async function AdminPage() {
   }
 
   const [products, categories, orders, imports] = await Promise.all([
-    prisma.product.count(),
+    prisma.product.count({ where: { status: "ACTIVE" } }),
     prisma.category.count(),
     prisma.order.count(),
     prisma.importRun.findMany({
@@ -39,7 +39,7 @@ export default async function AdminPage() {
       <section className="admin-stats">
         <div>
           <strong>{products}</strong>
-          <span>Товарів</span>
+          <span>Активних товарів</span>
         </div>
         <div>
           <strong>{categories}</strong>
