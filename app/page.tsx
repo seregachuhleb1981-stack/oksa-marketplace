@@ -1,13 +1,13 @@
-const categories = [
-  { name: "Аксесуари", icon: "◈" },
-  { name: "Одяг та взуття", icon: "◇" },
-  { name: "Дім і побут", icon: "⌂" },
-  { name: "Ремонт і будівництво", icon: "▦" },
-  { name: "Спорт і туризм", icon: "△" },
-  { name: "Електроніка", icon: "▣" }
-];
+import Link from "next/link";
+import { getCategories } from "@/lib/catalog";
 
-export default function HomePage() {
+const categoryIcons = ["◈", "◇", "⌂", "▦", "△", "▣"];
+
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const categories = await getCategories();
+
   return (
     <main className="site-shell">
       <header className="header">
@@ -47,12 +47,12 @@ export default function HomePage() {
           <a href="/categories">Усі категорії →</a>
         </div>
         <div className="category-grid">
-          {categories.map((category) => (
-            <a className="category-card" href="/catalog" key={category.name}>
-              <span className="category-icon">{category.icon}</span>
+          {categories.slice(0, 6).map((category, index) => (
+            <Link className="category-card" href={`/catalog?category=${encodeURIComponent(category.slug)}`} key={category.id}>
+              <span className="category-icon">{categoryIcons[index % categoryIcons.length]}</span>
               <span>{category.name}</span>
               <small>Переглянути →</small>
-            </a>
+            </Link>
           ))}
         </div>
       </section>
