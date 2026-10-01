@@ -4,6 +4,21 @@ import { startSupplierImport } from "@/lib/importer";
 
 export const dynamic = "force-dynamic";
 
+function importLabel(status: string) {
+  switch (status) {
+    case "running":
+      return "Виконується";
+    case "completed":
+      return "Завершено";
+    case "completed_with_errors":
+      return "Завершено з помилками";
+    case "failed":
+      return "Помилка";
+    default:
+      return status;
+  }
+}
+
 export default async function AdminPage() {
   async function startImport() {
     "use server";
@@ -72,15 +87,27 @@ export default async function AdminPage() {
               <p>Після запуску синхронізації результати з'являться тут.</p>
             </div>
           ) : (
-            imports.map((run) => (
-              <div className="admin-row" key={run.id}>
-                <strong>{run.status}</strong>
-                <span>{run.processed} оброблено</span>
-                <span>{run.created} створено</span>
-                <span>{run.updated} оновлено</span>
-                <span>{run.failed} помилок</span>
-              </div>
-            ))
+            imports.map((run) => {
+              const progress = run.processed
+                ? Math.min(100, Math.round((run.processed / Math.max(run.processed + run.failed, 1)) * 100))
+                : 0;
+
+              return (
+                <div className="admin-row" key={run.id}>
+                  <strong>{importLabel(run.status)}</strong>
+                  <span>{run.processed} оброблено</span>
+                  <span>{run.created} створено</span>
+                  <span>{run.updated} оновлено</span>
+                  <span>{run.failed} помилок</span>
+                  {run.status === "running" && (
+                    <span>Прогрес: {progress}%</span>
+                  )}
+                  {run.error && (
+                    <small>{run.error}</small>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       </section>
