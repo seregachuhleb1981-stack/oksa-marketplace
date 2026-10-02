@@ -21,4 +21,7 @@ services:
       - key: NEXT_PUBLIC_GTM_ID
         sync: false
       - key: NEXT_PUBLIC_META_PIXEL_ID
+        sync: false      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
         sync: false
