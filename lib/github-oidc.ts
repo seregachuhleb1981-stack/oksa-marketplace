@@ -104,7 +104,7 @@ function verifyWithKey(
   claims: GitHubOidcClaims
 ): GitHubOidcClaims {
   const publicKey = createPublicKey({
-    key: jwk as unknown as Record<string, unknown>,
+    key: jwk as unknown as JsonWebKey,
     format: "jwk"
   });
 
