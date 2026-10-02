@@ -30,7 +30,7 @@ export default function AdminLoginPage({
       httpOnly: true,
       sameSite: "lax",
       secure: true,
-      path: "/admin",
+      path: "/",
       maxAge: 60 * 60 * 24 * 30
     });
 
