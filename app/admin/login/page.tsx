@@ -12,7 +12,8 @@ export default function AdminLoginPage({
     "use server";
 
     const expectedEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
-    const expectedPassword = process.env.ADMIN_ACCESS_TOKEN;
+    const expectedPassword = process.env.ADMIN_PASSWORD || process.env.ADMIN_ACCESS_TOKEN;
+    const sessionToken = process.env.ADMIN_ACCESS_TOKEN;
 
     const suppliedEmail = String(formData.get("email") ?? "").trim().toLowerCase();
     const suppliedPassword = String(formData.get("password") ?? "");
@@ -20,13 +21,14 @@ export default function AdminLoginPage({
     if (
       !expectedEmail ||
       !expectedPassword ||
+      !sessionToken ||
       suppliedEmail !== expectedEmail ||
       suppliedPassword !== expectedPassword
     ) {
       redirect("/admin/login?error=1");
     }
 
-    (await cookies()).set("oksa_admin_access", suppliedPassword, {
+    (await cookies()).set("oksa_admin_access", sessionToken, {
       httpOnly: true,
       sameSite: "lax",
       secure: true,
