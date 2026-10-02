@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { startSupplierImport } from "@/lib/importer";
+import ClearCatalogButton from "./ClearCatalogButton";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,13 @@ export default async function AdminPage() {
   async function startImport() {
     "use server";
     await startSupplierImport();
+  }
+
+  async function clearCatalog() {
+    "use server";
+    await prisma.product.deleteMany();
+    await prisma.category.deleteMany();
+    await prisma.brand.deleteMany();
   }
 
   const [products, categories, orders, imports] = await Promise.all([
@@ -110,6 +118,19 @@ export default async function AdminPage() {
             })
           )}
         </div>
+      </section>
+
+      <section className="admin-panel">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Каталог</span>
+            <h2>Очистити каталог</h2>
+          </div>
+          <ClearCatalogButton action={clearCatalog} />
+        </div>
+        <p style={{color:"var(--muted)",fontSize:13}}>
+          Видаляє всі товари, зображення, характеристики, категорії та бренди. Замовлення та історія імпортів залишаються.
+        </p>
       </section>
 
       <section className="admin-panel">
