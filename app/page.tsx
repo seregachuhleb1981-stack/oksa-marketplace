@@ -11,19 +11,19 @@ export default async function HomePage() {
   return (
     <main className="site-shell">
       <header className="header">
-        <a className="brand" href="/" aria-label="OKSA">
+        <Link className="brand" href="/" aria-label="OKSA">
           <span className="brand-mark">O</span>
           <span>OKSA</span>
-        </a>
+        </Link>
         <nav className="nav" aria-label="Основна навігація">
-          <a href="/catalog">Каталог</a>
-          <a href="/categories">Категорії</a>
-          <a href="/favorites">Обране</a>
+          <Link href="/catalog">Каталог</Link>
+          <Link href="/categories">Категорії</Link>
+          <Link href="/favorites">Обране</Link>
         </nav>
         <div className="header-actions">
-          <a className="icon-button" href="/search" aria-label="Пошук">⌕</a>
-          <a className="icon-button" href="/cart" aria-label="Кошик">🛒</a>
-          <a className="account-button" href="/account">Увійти</a>
+          <Link className="icon-button" href="/search" aria-label="Пошук">⌕</Link>
+          <Link className="icon-button" href="/cart" aria-label="Кошик">🛒</Link>
+          <Link className="account-button" href="/account">Увійти</Link>
         </div>
       </header>
 
@@ -32,7 +32,7 @@ export default async function HomePage() {
           <span className="eyebrow">Новий український маркетплейс</span>
           <h1>Обирай.<br />Замовляй.<br /><em>Отримуй.</em></h1>
           <p>Знаходь потрібне серед тисяч товарів та оформлюй замовлення зручно.</p>
-          <a className="primary-button" href="/catalog">Перейти до каталогу <span>→</span></a>
+          <Link className="primary-button" href="/catalog">Перейти до каталогу <span>→</span></Link>
         </div>
         <div className="hero-card" aria-hidden="true">
           <div className="hero-orbit orbit-one" />
@@ -44,7 +44,7 @@ export default async function HomePage() {
       <section className="section">
         <div className="section-heading">
           <div><span className="eyebrow">Знайди своє</span><h2>Популярні категорії</h2></div>
-          <a href="/categories">Усі категорії →</a>
+          <Link href="/categories">Усі категорії →</Link>
         </div>
         <div className="category-grid">
           {categories.slice(0, 6).map((category, index) => (

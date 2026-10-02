@@ -62,7 +62,7 @@ export default async function AdminOrdersPage() {
       {orders.length === 0 ? (
         <div className="empty-state">
           <h2>Замовлень ще немає</h2>
-          <p>Нові замовлення з'являться тут автоматично.</p>
+          <p>Нові замовлення з’являться тут автоматично.</p>
         </div>
       ) : (
         <div className="admin-orders">

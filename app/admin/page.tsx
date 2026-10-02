@@ -84,7 +84,7 @@ export default async function AdminPage() {
           {imports.length === 0 ? (
             <div className="empty-state">
               <h2>Імпортів ще немає</h2>
-              <p>Після запуску синхронізації результати з'являться тут.</p>
+              <p>Після запуску синхронізації результати з’являться тут.</p>
             </div>
           ) : (
             imports.map((run) => {
