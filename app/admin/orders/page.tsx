@@ -12,6 +12,15 @@ const statuses = [
   "CANCELLED"
 ] as const;
 
+const statusLabels: Record<(typeof statuses)[number], string> = {
+  PENDING: "Очікує підтвердження",
+  CONFIRMED: "Підтверджено",
+  PROCESSING: "В обробці",
+  SHIPPED: "Відправлено",
+  COMPLETED: "Виконано",
+  CANCELLED: "Скасовано"
+};
+
 export default async function AdminOrdersPage() {
   async function updateStatus(formData: FormData) {
     "use server";
@@ -61,7 +70,7 @@ export default async function AdminOrdersPage() {
             <article className="admin-order" key={order.id}>
               <div>
                 <strong>{order.number}</strong>
-                <span>{order.status}</span>
+                <span>{statusLabels[order.status]}</span>
                 <span>{new Date(order.createdAt).toLocaleString("uk-UA")}</span>
               </div>
 
