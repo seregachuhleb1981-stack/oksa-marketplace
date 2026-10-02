@@ -23,7 +23,7 @@ export default async function HomePage() {
         <div className="header-actions">
           <Link className="icon-button" href="/search" aria-label="Пошук">⌕</Link>
           <Link className="icon-button" href="/cart" aria-label="Кошик">🛒</Link>
-          <Link className="account-button" href="/account">Увійти</Link>
+          <Link className="account-button" href="/cart">Кошик</Link>
         </div>
       </header>
 
