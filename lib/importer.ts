@@ -51,7 +51,7 @@ async function runSupplierImport(runId: string) {
     });
 
     if (!response.ok) {
-      throw new Error(`Feed request failed: HTTP ${response.status}`);
+      throw new Error(`Не вдалося отримати файл постачальника: HTTP ${response.status}`);
     }
 
     await setStage(
@@ -74,7 +74,7 @@ async function runSupplierImport(runId: string) {
     const root = parser.parse(xml)?.yml_catalog?.shop as XmlNode | undefined;
 
     if (!root) {
-      throw new Error("Invalid YML/XML: shop node not found");
+      throw new Error("Некоректний YML/XML: вузол shop не знайдено");
     }
 
     await setStage(runId, "Етап: XML розібрано, обробка категорій");
