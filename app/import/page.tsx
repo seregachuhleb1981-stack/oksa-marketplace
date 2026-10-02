@@ -1,114 +1,42 @@
 "use client";
-
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 
 type ImportRun = { id:string; status:string; processed:number; created:number; updated:number; failed:number; error:string|null };
 
-async function readApiResponse(response: Response) {
-  const raw = await response.text();
-  try { return { data: JSON.parse(raw) as Record<string, unknown>, raw }; }
-  catch { return { data: null, raw }; }
-}
-
 export default function ImportPage() {
-  const [secret, setSecret] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const value = secret.trim();
-    if (!value) return;
-    setBusy(true);
-    setStatus("Запускаємо імпорт у фоні…");
-
+  async function startImport() {
+    setBusy(true); setStatus("Запускаємо імпорт нового фіду…");
     try {
-      const response = await fetch("/api/import", {
-        method: "POST",
-        headers: { "x-import-secret": value },
-        cache: "no-store"
-      });
-      const { data, raw } = await readApiResponse(response);
-
-      if (!response.ok) {
-        const message = typeof data?.error === "string" ? data.error : raw.slice(0, 240);
-        setStatus(`Помилка запуску (${response.status}): ${message || "сервер не повернув деталей"}`);
-        return;
-      }
-
-      const runId = typeof data?.runId === "string" ? data.runId : "";
-      if (!runId) {
-        setStatus("Сервер не повернув ID імпорту. Перевіряємо конфігурацію API.");
-        return;
-      }
-
+      const response = await fetch("/api/admin/import", { method: "POST", cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) { setStatus(response.status === 401 ? "Сесія адміністратора недійсна. Увійдіть в адмін-панель знову." : "Помилка запуску: " + (data.error || "невідома помилка")); return; }
+      const runId = typeof data.runId === "string" ? data.runId : "";
+      if (!runId) { setStatus("Сервер не повернув ID імпорту."); return; }
       while (true) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        let progress: Response;
-        try {
-          progress = await fetch(`/api/import?runId=${encodeURIComponent(runId)}`, {
-            headers: { "x-import-secret": value },
-            cache: "no-store"
-          });
-        } catch {
-          setStatus("З'єднання із сервером перервано під час імпорту. Це може означати перезапуск процесу Render.");
-          return;
-        }
-
-        const progressResponse = await readApiResponse(progress);
-        if (!progress.ok) {
-          const message = typeof progressResponse.data?.error === "string"
-            ? progressResponse.data.error
-            : progressResponse.raw.slice(0, 240);
-          setStatus(`Помилка статусу (${progress.status}): ${message || "сервер не повернув деталей"}`);
-          return;
-        }
-
-        if (!progressResponse.data) {
-          setStatus("Сервер повернув некоректну відповідь під час перевірки імпорту.");
-          return;
-        }
-
-        const run = progressResponse.data.run as ImportRun | undefined;
-        if (!run) {
-          setStatus("Сервер не повернув дані про імпорт.");
-          return;
-        }
-
-        if (run.status === "running") {
-          setStatus(`Імпорт триває: ${run.processed} оброблено, ${run.created} додано, ${run.updated} оновлено.`);
-          continue;
-        }
-
-        if (run.status === "completed" || run.status === "completed_with_errors") {
-          setStatus(`Готово: ${run.processed} оброблено, ${run.created} додано, ${run.updated} оновлено, помилок ${run.failed}.${run.error ? ` ${run.error}` : ""}`);
-          setSecret("");
-        } else {
-          setStatus(`Імпорт завершився зі статусом "${run.status}". ${run.error || ""}`);
-        }
+        const progress = await fetch("/api/admin/import?runId=" + encodeURIComponent(runId), { cache: "no-store" });
+        const progressData = await progress.json();
+        if (!progress.ok) { setStatus("Помилка перевірки імпорту: " + (progressData.error || "невідома помилка")); return; }
+        const run = progressData.run as ImportRun | undefined;
+        if (!run) { setStatus("Сервер не повернув дані про імпорт."); return; }
+        if (run.status === "running") { setStatus("Імпорт триває: " + run.processed + " оброблено, " + run.created + " додано, " + run.updated + " оновлено."); continue; }
+        if (run.status === "completed" || run.status === "completed_with_errors") setStatus("Готово: " + run.processed + " оброблено, " + run.created + " додано, " + run.updated + " оновлено, помилок " + run.failed + ".");
+        else setStatus("Імпорт завершився зі статусом «" + run.status + "». " + (run.error || ""));
         break;
       }
-    } catch (error) {
-      setStatus(error instanceof Error ? `Помилка: ${error.message}` : "Невідома помилка з'єднання.");
-    } finally {
-      setBusy(false);
-    }
+    } catch (error) { setStatus(error instanceof Error ? "Помилка: " + error.message : "Помилка зєднання."); }
+    finally { setBusy(false); }
   }
 
-  return (
-    <main className="admin-shell import-shell">
-      <section className="admin-card import-card">
-        <span className="eyebrow">Службова сторінка</span>
-        <h1>Імпорт каталогу OKSA</h1>
-        <p>Імпорт запускається у фоні, а сторінка показує прогрес через базу даних.</p>
-        <form onSubmit={submit} className="admin-form">
-          <label>Секрет імпорту<input type="password" value={secret} onChange={(e)=>setSecret(e.target.value)} autoComplete="off" placeholder="Вставте IMPORT_SECRET з Render" required /></label>
-          <button className="primary-button" type="submit" disabled={busy}>{busy ? "Імпорт триває…" : "Запустити імпорт"}</button>
-        </form>
-        {status && <p className="import-status" role="status">{status}</p>}
-        <a className="catalog-back" href="/catalog">← Повернутися до каталогу</a>
-      </section>
-    </main>
-  );
+  return <main className="admin-shell import-shell"><section className="admin-card import-card">
+    <span className="eyebrow">Синхронізація каталогу</span>
+    <h1>Імпорт каталогу OKSA</h1>
+    <p>Новий фід запускається без введення секрету — доступ перевіряється через адмін-сесію.</p>
+    <button className="primary-button" type="button" onClick={startImport} disabled={busy}>{busy ? "Імпорт триває…" : "Завантажити новий фід"}</button>
+    {status && <p className="import-status" role="status">{status}</p>}
+    <a className="catalog-back" href="/admin">← Повернутися до адмін-панелі</a>
+  </section></main>;
 }
