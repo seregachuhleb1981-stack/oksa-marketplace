@@ -47,7 +47,7 @@ export default async function AdminPage() {
 
       <section className="catalog-intro">
         <span className="eyebrow">Керування</span>
-        <h1>OKSA Admin.</h1>
+        <h1>Адмін-панель OKSA.</h1>
         <p>Огляд каталогу, замовлень та синхронізації даних.</p>
       </section>
 
