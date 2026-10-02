@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { sendOrderToTelegram } from "@/lib/telegram";
 
 const itemSchema = z.object({ id: z.string().min(1), quantity: z.number().int().min(1).max(99) });
 const orderSchema = z.object({
@@ -21,7 +22,9 @@ function orderNumber() {
 export async function POST(request: Request) {
   try {
     const parsed = orderSchema.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) return NextResponse.json({ error: "Некоректні дані замовлення" }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Некоректні дані замовлення" }, { status: 400 });
+    }
 
     const quantities = new Map<string, number>();
     for (const item of parsed.data.items) {
@@ -29,7 +32,9 @@ export async function POST(request: Request) {
     }
 
     const ids = [...quantities.keys()];
-    const products = await prisma.product.findMany({ where: { id: { in: ids }, status: "ACTIVE" } });
+    const products = await prisma.product.findMany({
+      where: { id: { in: ids }, status: "ACTIVE" }
+    });
     const byId = new Map(products.map((p) => [p.id, p]));
 
     const lines = ids.map((id) => {
@@ -51,17 +56,53 @@ export async function POST(request: Request) {
         deliveryBranch: parsed.data.branch,
         comment: parsed.data.comment || null,
         total,
-        items: { create: lines.map((line) => ({ productId: line.product.id, sku: line.product.sku, name: line.product.name, price: line.price, quantity: line.quantity, total: line.total })) }
+        items: {
+          create: lines.map((line) => ({
+            productId: line.product.id,
+            sku: line.product.sku,
+            name: line.product.name,
+            price: line.price,
+            quantity: line.quantity,
+            total: line.total
+          }))
+        }
       },
-      select: { number: true, status: true, total: true }
+      select: { id: true, number: true, status: true, total: true }
     });
 
-    return NextResponse.json({ ok: true, order: { ...order, total: order.total.toString() } }, { status: 201 });
+    let telegramSent = false;
+
+    try {
+      const telegram = await sendOrderToTelegram(order.id);
+      telegramSent = telegram.sent;
+    } catch (telegramError) {
+      console.error("Telegram order notification failed:", telegramError);
+    }
+
+    return NextResponse.json(
+      {
+        ok: true,
+        order: {
+          number: order.number,
+          status: order.status,
+          total: order.total.toString()
+        },
+        telegramSent
+      },
+      { status: 201 }
+    );
   } catch (error) {
     if (error instanceof Error && error.message === "Товар недоступний") {
-      return NextResponse.json({ error: "Один із товарів більше недоступний. Оновіть кошик і спробуйте ще раз." }, { status: 409 });
+      return NextResponse.json(
+        { error: "Один із товарів більше недоступний. Оновіть кошик і спробуйте ще раз." },
+        { status: 409 }
+      );
     }
+
     console.error("Order creation failed:", error);
-    return NextResponse.json({ error: "Не вдалося створити замовлення. Спробуйте ще раз." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Не вдалося створити замовлення. Спробуйте ще раз." },
+      { status: 500 }
+    );
   }
 }
