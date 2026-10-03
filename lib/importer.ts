@@ -33,10 +33,35 @@ function uniqueSlug(base: string, sku: string): string {
 
 function field(node: XmlNode, ...keys: string[]): string | undefined {
   for (const key of keys) {
-    const value = text(node[key]);
-    if (value) return value;
+    const value = node[key];
+
+    if (Array.isArray(value)) {
+      const first = value.map(text).find(Boolean);
+      if (first) return first;
+      continue;
+    }
+
+    const result = text(value);
+    if (result) return result;
   }
+
   return undefined;
+}
+
+function values(node: XmlNode, ...keys: string[]): string[] {
+  const result: string[] = [];
+
+  for (const key of keys) {
+    const value = node[key];
+    const items = Array.isArray(value) ? value : [value];
+
+    for (const item of items) {
+      const parsed = text(item);
+      if (parsed && !result.includes(parsed)) result.push(parsed);
+    }
+  }
+
+  return result;
 }
 
 function priceValue(value: string | undefined): number {
@@ -214,10 +239,26 @@ async function runSupplierImport(runId: string) {
               "sku"
             ) || `item-${processed + 1}`;
 
-          const name = field(offer, "name", "g:title", "title", "productname");
-          const priceRaw = priceValue(
-            field(offer, "price", "g:price", "sale_price", "g:sale_price")
+          const name = field(
+            offer,
+            "name_ua",
+            "name",
+            "g:title",
+            "title",
+            "productname"
           );
+
+          const promoPriceRaw = priceValue(
+            field(offer, "price_promo", "promo_price", "g:sale_price", "sale_price")
+          );
+
+          const regularPriceRaw = priceValue(
+            field(offer, "price", "g:price")
+          );
+
+          const priceRaw = Number.isFinite(promoPriceRaw)
+            ? promoPriceRaw
+            : regularPriceRaw;
           const oldPriceRaw = priceValue(
             field(offer, "oldprice", "old_price", "g:price_old", "g:compare_at_price")
           );
@@ -256,40 +297,32 @@ async function runSupplierImport(runId: string) {
             categoryIds.set(categoryValue, category.id);
           }
 
-          const images = arrayOf(
-            (
-              field(
-                offer,
-                "g:image_link",
-                "image_link",
-                "picture",
-                "image"
-              ) || ""
-            ).split(/\s*[,;]\s*/)
+          const allImages = values(
+            offer,
+            "picture",
+            "g:image_link",
+            "image_link",
+            "image",
+            "g:additional_image_link"
           );
-
-          const additionalImages = arrayOf(
-            offer["g:additional_image_link"] as string | string[] | undefined
-          )
-            .map(text)
-            .filter(Boolean) as string[];
-
-          const allImages = [
-            ...images.map(text).filter(Boolean),
-            ...additionalImages
-          ] as string[];
 
           const description = field(
             offer,
+            "description_ua",
             "description",
             "g:description",
             "summary"
           );
 
+          const stockQuantity = priceValue(
+            field(offer, "stock_quantity", "quantity", "stock")
+          );
+
           const available =
             format === "YML"
               ? String(offer["@_available"] ?? "true").toLowerCase() !==
-                "false"
+                  "false" &&
+                (!Number.isFinite(stockQuantity) || stockQuantity > 0)
               : googleAvailable(
                   field(offer, "g:availability", "availability")
                 );
@@ -313,7 +346,7 @@ async function runSupplierImport(runId: string) {
               currency,
               available,
               categoryId,
-              vendorCode: sku,
+              vendorCode: field(offer, "vendorCode", "article", "@_id") || sku,
               images: {
                 create: allImages.map((url, sortOrder) => ({
                   url,
@@ -355,6 +388,11 @@ async function runSupplierImport(runId: string) {
           const attributeFields: Array<[string, string]> = [
             ["Бренд", "g:brand"],
             ["Бренд", "vendor"],
+            ["Код товару", "vendorCode"],
+            ["Артикул", "article"],
+            ["Ціна без акції", "price"],
+            ["Акційна ціна", "price_promo"],
+            ["Кількість", "stock_quantity"],
             ["GTIN", "g:gtin"],
             ["MPN", "g:mpn"],
             ["Стан", "g:condition"],
