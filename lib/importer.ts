@@ -191,6 +191,7 @@ async function runSupplierImport(runId: string) {
     let created = 0;
     let updated = 0;
     let failed = 0;
+    const importedSkus = new Set<string>();
 
     await setStage(
       runId,
@@ -216,6 +217,9 @@ async function runSupplierImport(runId: string) {
           const name = field(offer, "name", "g:title", "title", "productname");
           const priceRaw = priceValue(
             field(offer, "price", "g:price", "sale_price", "g:sale_price")
+          );
+          const oldPriceRaw = priceValue(
+            field(offer, "oldprice", "old_price", "g:price_old", "g:compare_at_price")
           );
 
           if (!name || !Number.isFinite(priceRaw) || priceRaw < 0) {
@@ -290,6 +294,9 @@ async function runSupplierImport(runId: string) {
                   field(offer, "g:availability", "availability")
                 );
 
+          const currency =
+            field(offer, "currencyId", "currency", "g:currency") || "UAH";
+
           const existing = await prisma.product.findUnique({
             where: { sku }
           });
@@ -302,6 +309,8 @@ async function runSupplierImport(runId: string) {
               slug: uniqueSlug(name, sku),
               description,
               price: priceRaw,
+              oldPrice: Number.isFinite(oldPriceRaw) ? oldPriceRaw : null,
+              currency,
               available,
               categoryId,
               vendorCode: sku,
@@ -313,7 +322,11 @@ async function runSupplierImport(runId: string) {
               }
             },
             update: {
+              name,
+              description,
               price: priceRaw,
+              oldPrice: Number.isFinite(oldPriceRaw) ? oldPriceRaw : null,
+              currency,
               available,
               categoryId,
               images: {
@@ -325,6 +338,8 @@ async function runSupplierImport(runId: string) {
               }
             }
           });
+
+          importedSkus.add(sku);
 
           if (existing) {
             updated++;
@@ -339,15 +354,23 @@ async function runSupplierImport(runId: string) {
           const feedAttributes: Array<{ name: string; value: string }> = [];
           const attributeFields: Array<[string, string]> = [
             ["Бренд", "g:brand"],
+            ["Бренд", "vendor"],
             ["GTIN", "g:gtin"],
             ["MPN", "g:mpn"],
             ["Стан", "g:condition"],
-            ["Посилання", "g:link"]
+            ["Посилання", "g:link"],
+            ["Посилання", "url"]
           ];
+
+          const seenAttributes = new Set<string>();
 
           for (const [label, key] of attributeFields) {
             const value = field(offer, key);
-            if (value) feedAttributes.push({ name: label, value });
+            const signature = `${label}:${value || ""}`;
+            if (value && !seenAttributes.has(signature)) {
+              feedAttributes.push({ name: label, value });
+              seenAttributes.add(signature);
+            }
           }
 
           const parsedParams = params.flatMap((param) => {
@@ -393,6 +416,32 @@ async function runSupplierImport(runId: string) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
+    if (failed === 0) {
+      await setStage(
+        runId,
+        "Етап: новий каталог імпортовано без помилок, видаляю товари зі старого фіду"
+      );
+
+      const staleProducts = await prisma.product.findMany({
+        where: { sku: { notIn: Array.from(importedSkus) } },
+        select: { id: true }
+      });
+
+      if (staleProducts.length) {
+        await prisma.product.deleteMany({
+          where: { id: { in: staleProducts.map(({ id }) => id) } }
+        });
+      }
+
+      await prisma.category.deleteMany({
+        where: { products: { none: {} } }
+      });
+
+      await prisma.brand.deleteMany({
+        where: { products: { none: {} } }
+      });
+    }
+
     await prisma.importRun.update({
       where: { id: runId },
       data: {
@@ -403,8 +452,8 @@ async function runSupplierImport(runId: string) {
         updated,
         failed,
         error: failed
-          ? `Імпорт завершено: помилок ${failed}`
-          : "Імпорт завершено успішно"
+          ? `Імпорт завершено: помилок ${failed}; старі товари збережено для безпеки`
+          : `Імпорт завершено успішно: ${created} створено, ${updated} оновлено, старі товари видалено`
       }
     });
   } catch (error) {
