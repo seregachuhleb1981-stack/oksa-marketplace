@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { redirect } from "next/navigation";
 import ClearCatalogButton from "./ClearCatalogButton";
-import StartImportButton from "./StartImportButton";
+import { startSupplierImport } from "@/lib/importer";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,12 @@ function importLabel(status: string) {
 }
 
 export default async function AdminPage() {
+  async function startImport() {
+    "use server";
+    await startSupplierImport();
+    redirect("/admin");
+  }
+
   async function clearCatalog() {
     "use server";
     await prisma.product.deleteMany();
@@ -76,7 +83,11 @@ export default async function AdminPage() {
             <h2>Імпорт каталогу</h2>
           </div>
 
-          <StartImportButton />
+          <form action={startImport}>
+            <button className="primary-button" type="submit">
+              Запустити імпорт <span>→</span>
+            </button>
+          </form>
         </div>
 
         <div className="admin-table">
