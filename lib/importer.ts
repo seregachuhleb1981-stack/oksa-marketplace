@@ -6,7 +6,10 @@ type XmlNode = Record<string, unknown>;
 type XmlOffer = XmlNode;
 
 function text(value: unknown): string | undefined {
-  if (typeof value === "string" || typeof value === "number") return String(value).trim();
+  if (typeof value === "string" || typeof value === "number") {
+    const result = String(value).trim();
+    return result || undefined;
+  }
   return undefined;
 }
 
@@ -28,6 +31,29 @@ function uniqueSlug(base: string, sku: string): string {
   return `${slugify(base) || "product"}-${slugify(sku) || "item"}`;
 }
 
+function field(node: XmlNode, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = text(node[key]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function priceValue(value: string | undefined): number {
+  if (!value) return Number.NaN;
+  const normalized = value.replace(",", ".");
+  const match = normalized.match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : Number.NaN;
+}
+
+function googleAvailable(value: string | undefined): boolean {
+  if (!value) return true;
+  const normalized = value.toLowerCase().trim();
+  return !["out of stock", "out_of_stock", "unavailable", "false"].includes(
+    normalized
+  );
+}
+
 async function setStage(runId: string, stage: string) {
   await prisma.importRun.update({
     where: { id: runId },
@@ -44,55 +70,73 @@ async function runSupplierImport(runId: string) {
     const response = await fetch(SUPPLIER_FEED_URL, {
       headers: {
         "User-Agent": "OKSA-Product-Importer/1.0",
-        "Accept": "application/xml,text/xml,*/*"
+        "Accept": "application/xml,text/xml,application/rss+xml,*/*"
       },
       cache: "no-store",
       signal: AbortSignal.timeout(90_000)
     });
 
     if (!response.ok) {
-      throw new Error(`Не вдалося отримати файл постачальника: HTTP ${response.status}`);
+      throw new Error(
+        `Не вдалося отримати файл постачальника: HTTP ${response.status}`
+      );
     }
-
-    await setStage(
-      runId,
-      `Етап: XML отримано (HTTP ${response.status}), читаю файл`
-    );
 
     const xml = await response.text();
 
     await setStage(
       runId,
-      `Етап: XML завантажено (${xml.length} символів), розбір XML`
+      `Етап: XML отримано (${xml.length} символів), визначаю формат`
     );
 
     const parser = new XMLParser({
       ignoreAttributes: false,
-      trimValues: true
+      trimValues: true,
+      processEntities: false
     });
 
-    const root = parser.parse(xml)?.yml_catalog?.shop as XmlNode | undefined;
+    const parsed = parser.parse(xml) as XmlNode;
+    const ymlShop = (parsed.yml_catalog as XmlNode | undefined)?.shop as
+      | XmlNode
+      | undefined;
+    const rssChannel = (parsed.rss as XmlNode | undefined)?.channel as
+      | XmlNode
+      | undefined;
+    const atomFeed = parsed.feed as XmlNode | undefined;
 
-    if (!root) {
-      throw new Error("Некоректний YML/XML: вузол shop не знайдено");
+    let root: XmlNode | undefined;
+    let format = "";
+
+    if (ymlShop) {
+      root = ymlShop;
+      format = "YML";
+    } else if (rssChannel) {
+      root = rssChannel;
+      format = "Google/RSS";
+    } else if (atomFeed) {
+      root = atomFeed;
+      format = "Feed";
     }
 
-    await setStage(runId, "Етап: XML розібрано, обробка категорій");
+    if (!root) {
+      const topKeys = Object.keys(parsed).join(", ");
+      throw new Error(
+        `Некоректний XML: не знайдено YML shop або RSS channel. Кореневі вузли: ${topKeys || "невідомо"}`
+      );
+    }
 
-    const categories = arrayOf<XmlNode>(
-      root.categories
-        ? ((root.categories as XmlNode).category as
-            | XmlNode
-            | XmlNode[]
-            | undefined)
-        : undefined
-    );
+    await setStage(runId, `Етап: формат ${format}, читаю каталог`);
 
     const categoryIds = new Map<string, string>();
 
+    const categoriesNode = root.categories as XmlNode | undefined;
+    const categories = arrayOf<XmlNode>(
+      categoriesNode?.category as XmlNode | XmlNode[] | undefined
+    );
+
     for (const raw of categories) {
-      const id = text(raw["@_id"]);
-      const name = text(raw["#text"] ?? raw);
+      const id = field(raw, "@_id", "id");
+      const name = field(raw, "#text", "name", "title");
 
       if (!id || !name) continue;
 
@@ -100,22 +144,16 @@ async function runSupplierImport(runId: string) {
 
       const category = await prisma.category.upsert({
         where: { slug },
-        create: {
-          name,
-          slug,
-          sortOrder: 0
-        },
-        update: {
-          name
-        }
+        create: { name, slug, sortOrder: 0 },
+        update: { name }
       });
 
       categoryIds.set(id, category.id);
     }
 
     for (const raw of categories) {
-      const id = text(raw["@_id"]);
-      const parentId = text(raw["@_parentId"]);
+      const id = field(raw, "@_id", "id");
+      const parentId = field(raw, "@_parentId", "parentId");
 
       if (!id || !parentId) continue;
 
@@ -130,11 +168,24 @@ async function runSupplierImport(runId: string) {
       }
     }
 
-    const offersNode = root.offers as XmlNode | undefined;
+    let offers: XmlOffer[];
 
-    const offers = arrayOf<XmlOffer>(
-      offersNode?.offer as XmlOffer | XmlOffer[] | undefined
-    );
+    if (format === "YML") {
+      const offersNode = root.offers as XmlNode | undefined;
+      offers = arrayOf<XmlOffer>(
+        offersNode?.offer as XmlOffer | XmlOffer[] | undefined
+      );
+    } else {
+      offers = arrayOf<XmlOffer>(
+        root.item as XmlOffer | XmlOffer[] | undefined
+      );
+    }
+
+    if (!offers.length) {
+      throw new Error(
+        `XML завантажено, але товари не знайдено у форматі ${format}`
+      );
+    }
 
     let processed = 0;
     let created = 0;
@@ -143,7 +194,7 @@ async function runSupplierImport(runId: string) {
 
     await setStage(
       runId,
-      `Етап: знайдено товарів ${offers.length}, починаю імпорт`
+      `Етап: формат ${format}, знайдено товарів ${offers.length}, починаю імпорт`
     );
 
     for (let offset = 0; offset < offers.length; offset += 20) {
@@ -151,36 +202,93 @@ async function runSupplierImport(runId: string) {
 
       for (const offer of batch) {
         try {
-          const sku = text(offer.vendorCode) || text(offer["@_id"]);
-          const name = text(offer.name);
-          const priceRaw = Number(text(offer.price));
+          const sku =
+            field(
+              offer,
+              "vendorCode",
+              "@_id",
+              "g:id",
+              "id",
+              "offerId",
+              "sku"
+            ) || `item-${processed + 1}`;
 
-          if (
-            !sku ||
-            !name ||
-            !Number.isFinite(priceRaw) ||
-            priceRaw < 0
-          ) {
+          const name = field(offer, "name", "g:title", "title", "productname");
+          const priceRaw = priceValue(
+            field(offer, "price", "g:price", "sale_price", "g:sale_price")
+          );
+
+          if (!name || !Number.isFinite(priceRaw) || priceRaw < 0) {
             failed++;
             processed++;
             continue;
           }
 
-          const categoryValue = text(offer.categoryId);
-          const categoryId = categoryValue
-            ? categoryIds.get(categoryValue)
-            : undefined;
+          const categoryValue =
+            field(
+              offer,
+              "categoryId",
+              "g:product_type",
+              "product_type",
+              "category",
+              "g:google_product_category"
+            ) || "Інші товари";
+
+          let categoryId = categoryIds.get(categoryValue);
+
+          if (!categoryId) {
+            const categorySlug = `${slugify(categoryValue)}-feed`;
+            const category = await prisma.category.upsert({
+              where: { slug: categorySlug },
+              create: {
+                name: categoryValue,
+                slug: categorySlug,
+                sortOrder: 0
+              },
+              update: { name: categoryValue }
+            });
+
+            categoryId = category.id;
+            categoryIds.set(categoryValue, category.id);
+          }
 
           const images = arrayOf(
-            offer.picture as string | string[] | undefined
+            (
+              field(
+                offer,
+                "g:image_link",
+                "image_link",
+                "picture",
+                "image"
+              ) || ""
+            ).split(/\s*[,;]\s*/)
+          );
+
+          const additionalImages = arrayOf(
+            offer["g:additional_image_link"] as string | string[] | undefined
           )
             .map(text)
             .filter(Boolean) as string[];
 
-          const description = text(offer.description);
+          const allImages = [
+            ...images.map(text).filter(Boolean),
+            ...additionalImages
+          ] as string[];
+
+          const description = field(
+            offer,
+            "description",
+            "g:description",
+            "summary"
+          );
 
           const available =
-            String(offer["@_available"] ?? "true").toLowerCase() !== "false";
+            format === "YML"
+              ? String(offer["@_available"] ?? "true").toLowerCase() !==
+                "false"
+              : googleAvailable(
+                  field(offer, "g:availability", "availability")
+                );
 
           const existing = await prisma.product.findUnique({
             where: { sku }
@@ -188,7 +296,6 @@ async function runSupplierImport(runId: string) {
 
           const product = await prisma.product.upsert({
             where: { sku },
-
             create: {
               sku,
               name,
@@ -199,22 +306,19 @@ async function runSupplierImport(runId: string) {
               categoryId,
               vendorCode: sku,
               images: {
-                create: images.map((url, sortOrder) => ({
+                create: allImages.map((url, sortOrder) => ({
                   url,
                   sortOrder
                 }))
               }
             },
-
-            // Для вже існуючих товарів назва та опис OKSA
-            // не перезаписуються даними постачальника.
             update: {
               price: priceRaw,
               available,
               categoryId,
               images: {
                 deleteMany: {},
-                create: images.map((url, sortOrder) => ({
+                create: allImages.map((url, sortOrder) => ({
                   url,
                   sortOrder
                 }))
@@ -232,30 +336,44 @@ async function runSupplierImport(runId: string) {
             offer.param as XmlNode | XmlNode[] | undefined
           );
 
+          const feedAttributes: Array<{ name: string; value: string }> = [];
+          const attributeFields: Array<[string, string]> = [
+            ["Бренд", "g:brand"],
+            ["GTIN", "g:gtin"],
+            ["MPN", "g:mpn"],
+            ["Стан", "g:condition"],
+            ["Посилання", "g:link"]
+          ];
+
+          for (const [label, key] of attributeFields) {
+            const value = field(offer, key);
+            if (value) feedAttributes.push({ name: label, value });
+          }
+
+          const parsedParams = params.flatMap((param) => {
+            const key = field(param, "@_name", "name");
+            const value = field(param, "#text", "value");
+            return key && value ? [{ name: key, value }] : [];
+          });
+
           await prisma.productAttribute.deleteMany({
             where: { productId: product.id }
           });
 
-          if (params.length) {
-            await prisma.productAttribute.createMany({
-              data: params.flatMap((param) => {
-                const key = text(param["@_name"]);
-                const value = text(param["#text"] ?? param);
+          const attributes = [...feedAttributes, ...parsedParams];
 
-                return key && value
-                  ? [
-                      {
-                        productId: product.id,
-                        name: key,
-                        value
-                      }
-                    ]
-                  : [];
-              })
+          if (attributes.length) {
+            await prisma.productAttribute.createMany({
+              data: attributes.map(({ name, value }) => ({
+                productId: product.id,
+                name,
+                value
+              }))
             });
           }
-        } catch {
+        } catch (error) {
           failed++;
+          console.error("OKSA import product error:", error);
         }
 
         processed++;
@@ -285,11 +403,13 @@ async function runSupplierImport(runId: string) {
         updated,
         failed,
         error: failed
-          ? `Помилок під час імпорту: ${failed}`
-          : null
+          ? `Імпорт завершено: помилок ${failed}`
+          : "Імпорт завершено успішно"
       }
     });
   } catch (error) {
+    console.error("OKSA supplier import failed:", error);
+
     await prisma.importRun.update({
       where: { id: runId },
       data: {
@@ -298,7 +418,7 @@ async function runSupplierImport(runId: string) {
         error:
           error instanceof Error
             ? error.message
-            : "Unknown error"
+            : "Невідома помилка імпорту"
       }
     });
   }
@@ -334,9 +454,7 @@ export async function startSupplierImport() {
   }
 
   const run = await prisma.importRun.create({
-    data: {
-      status: "running"
-    }
+    data: { status: "running" }
   });
 
   void runSupplierImport(run.id);
