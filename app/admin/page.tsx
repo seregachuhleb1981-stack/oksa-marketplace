@@ -22,10 +22,18 @@ function importLabel(status: string) {
 }
 
 export default async function AdminPage() {
-  async function startImport() {
+  async function startImport(formData: FormData) {
     "use server";
+
+    const expectedPassword = process.env.ADMIN_ACCESS_TOKEN;
+    const suppliedPassword = String(formData.get("importPassword") ?? "");
+
+    if (!expectedPassword || suppliedPassword !== expectedPassword) {
+      redirect("/admin?importError=1");
+    }
+
     await startSupplierImport();
-    redirect("/admin");
+    redirect("/admin?importStarted=1");
   }
 
   async function clearCatalog() {
@@ -83,7 +91,15 @@ export default async function AdminPage() {
             <h2>Імпорт каталогу</h2>
           </div>
 
-          <form action={startImport}>
+          <form action={startImport} style={{display:"grid",gap:8,justifyItems:"end"}}>
+            <input
+              name="importPassword"
+              type="password"
+              placeholder="Пароль для запуску імпорту"
+              autoComplete="current-password"
+              required
+              style={{padding:12,minWidth:260}}
+            />
             <button className="primary-button" type="submit">
               Запустити імпорт <span>→</span>
             </button>
