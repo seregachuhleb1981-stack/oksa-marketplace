@@ -11,18 +11,10 @@ export default function AdminLoginPage({
   async function login(formData: FormData) {
     "use server";
 
-    const expectedEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
     const expectedPassword = process.env.ADMIN_ACCESS_TOKEN;
-
-    const suppliedEmail = String(formData.get("email") ?? "").trim().toLowerCase();
     const suppliedPassword = String(formData.get("password") ?? "");
 
-    if (
-      !expectedEmail ||
-      !expectedPassword ||
-      suppliedEmail !== expectedEmail ||
-      suppliedPassword !== expectedPassword
-    ) {
+    if (!expectedPassword || suppliedPassword !== expectedPassword) {
       redirect("/admin/login?error=1");
     }
 
@@ -42,24 +34,16 @@ export default function AdminLoginPage({
       <section className="catalog-intro">
         <span className="eyebrow">OKSA</span>
         <h1>Вхід до адмін-панелі</h1>
-        <p>Увійдіть за електронною адресою та паролем адміністратора.</p>
+        <p>Введіть пароль адміністратора.</p>
 
         <form
           action={login}
           style={{ display: "grid", gap: 12, maxWidth: 420 }}
         >
           <input
-            name="email"
-            type="email"
-            placeholder="Електронна адреса"
-            autoComplete="username"
-            required
-            style={{ padding: 12 }}
-          />
-          <input
             name="password"
             type="password"
-            placeholder="Пароль"
+            placeholder="Пароль адміністратора"
             autoComplete="current-password"
             required
             style={{ padding: 12 }}
